@@ -35,13 +35,11 @@ class Settings(BaseSettings):
     GROQ_MAX_TOKENS: int = 8192
     GROQ_REQUEST_TIMEOUT: int = 120
 
-    # Ollama Settings
-    USE_OLLAMA: bool = False
-    OLLAMA_BASE_URL: str = "http://localhost:11434"
-    OLLAMA_MODEL_NAME: str = "llama3.2-vision:latest"
-    OLLAMA_REQUEST_TIMEOUT: int = 300
-    OLLAMA_MAX_RETRIES: int = 3
-    OLLAMA_RETRY_DELAY: float = 1.0
+    # OlmOCR Settings (for OCR extraction)
+    OLMOCR_BASE_URL: str = "http://localhost:8000"
+    OLMOCR_REQUEST_TIMEOUT: int = 300
+    OLMOCR_MAX_RETRIES: int = 3
+    OLMOCR_RETRY_DELAY: float = 1.0
 
     # Processing Settings
     CLEANUP_TEMP_FILES: bool = True

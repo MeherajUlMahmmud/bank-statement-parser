@@ -1,416 +1,344 @@
 import json
 import logging
-import os
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 
 class PromptService:
     """
-    Service class for generating prompts for document processing.
-    
-    This class handles the creation of structured prompts for data extraction
-    from various document types (bank statements, invoices, receipts, generic documents)
-    using both OCR text and images. Supports both legacy document-specific prompts
-    and modern canonical schema prompts.
+    Service for generating prompts for the multi-agent bank statement processing pipeline.
+
+    Provides prompts for:
+    - Agent 1: OCR Cleanup (cleans raw OCR text)
+    - Agent 2: Structured Data Extraction (extracts structured JSON from cleaned text)
+    - Agent 3: Data Normalization & Validation (normalizes and validates extracted data)
     """
 
     def __init__(self):
         """Initialize the PromptService."""
-        logger.info("PromptService initialized - Using canonical extraction prompts")
+        logger.info("PromptService initialized for bank statement processing")
 
     # ============================================================================
-    # Canonical Schema Extraction Prompts (Document Type Agnostic)
+    # Agent 1: OCR Cleanup Agent
     # ============================================================================
 
-    def create_canonical_extraction_prompt(
+    def create_ocr_cleanup_prompt(self, raw_ocr_text: str) -> str:
+        """
+        Create prompt for Agent 1: OCR Cleanup.
+
+        This agent receives raw OCR text and cleans it up by:
+        - Removing OCR noise and artifacts
+        - Fixing common OCR errors (l→1, O→0, etc.)
+        - Preserving table structure
+        - Maintaining column alignment
+
+        Args:
+            raw_ocr_text: Raw text from OlmOCR
+
+        Returns:
+            str: Prompt for OCR cleanup
+        """
+        return f"""You are an expert OCR cleanup specialist for bank statements. Your task is to clean and fix the raw OCR text while preserving the original structure and layout.
+
+RAW OCR TEXT:
+```
+{raw_ocr_text}
+```
+
+CLEANUP TASKS:
+
+1. **Fix Common OCR Errors:**
+   - Replace common character substitutions (l→1, O→0, S→5, etc.)
+   - Fix broken words and spacing issues
+   - Correct misread dates and numbers
+   - Fix currency symbols and decimal points
+
+2. **Preserve Structure:**
+   - Maintain table alignment and columns
+   - Keep transaction rows intact
+   - Preserve headers and section labels
+   - Keep date-description-amount groupings
+
+3. **Remove Noise:**
+   - Remove OCR artifacts (random characters, symbols)
+   - Clean up extra whitespace while preserving alignment
+   - Remove duplicate characters or lines
+   - Fix line breaks that split data incorrectly
+
+4. **Enhance Readability:**
+   - Ensure dates are in consistent format
+   - Align numbers properly
+   - Separate sections clearly
+   - Fix truncated or merged words
+
+OUTPUT FORMAT:
+Return ONLY the cleaned text. Do NOT add explanations or JSON. Just output the cleaned, structured text that maintains the original bank statement layout.
+
+CRITICAL: Preserve all financial data (dates, amounts, descriptions) exactly - just fix the OCR errors. Do not modify or interpret the data.
+"""
+
+    # ============================================================================
+    # Agent 2: Structured Data Extraction Agent
+    # ============================================================================
+
+    def create_extraction_prompt(self, cleaned_text: str) -> str:
+        """
+        Create prompt for Agent 2: Structured Data Extraction.
+
+        This agent receives cleaned OCR text and extracts structured JSON data.
+
+        Args:
+            cleaned_text: Cleaned text from Agent 1
+
+        Returns:
+            str: Prompt for data extraction
+        """
+        sample_json = {
+            "account": {
+                "account_number": {"value": "XXXX1234", "confidence": 0.92},
+                "account_holder": {"value": "John Doe", "confidence": 0.87},
+                "account_type": {"value": "Savings", "confidence": 0.85}
+            },
+            "period": {
+                "start_date": {"value": "2025-01-01", "confidence": 0.95},
+                "end_date": {"value": "2025-01-31", "confidence": 0.94}
+            },
+            "bank": {
+                "bank_name": {"value": "Example Bank", "confidence": 0.98},
+                "branch_name": {"value": "Main Branch", "confidence": 0.90},
+                "currency": {"value": "BDT", "confidence": 0.99}
+            },
+            "balances": {
+                "opening_balance": {"value": 17500.00, "confidence": 0.95},
+                "closing_balance": {"value": 15000.00, "confidence": 0.95},
+                "total_debits": {"value": 5500.00, "confidence": 0.92},
+                "total_credits": {"value": 3000.00, "confidence": 0.91}
+            },
+            "transactions": [
+                {
+                    "date": {"value": "2025-01-02", "confidence": 0.98},
+                    "description": {"value": "ATM Withdrawal", "confidence": 0.93},
+                    "debit": {"value": 2500.00, "confidence": 0.98},
+                    "credit": {"value": 0.00, "confidence": 0.98},
+                    "balance": {"value": 15000.00, "confidence": 0.90}
+                },
+                {
+                    "date": {"value": "2025-01-05", "confidence": 0.97},
+                    "description": {"value": "Salary Credit", "confidence": 0.95},
+                    "debit": {"value": 0.00, "confidence": 0.98},
+                    "credit": {"value": 50000.00, "confidence": 0.97},
+                    "balance": {"value": 65000.00, "confidence": 0.92}
+                }
+            ]
+        }
+
+        sample_json_str = json.dumps(sample_json, indent=2)
+
+        return f"""You are an expert data extractor for bank statements. Extract structured information from the cleaned bank statement text into JSON format.
+
+CLEANED BANK STATEMENT TEXT:
+```
+{cleaned_text}
+```
+
+EXTRACTION TASKS:
+
+1. **Account Information:**
+   - Account number (mask if needed: XXXX1234)
+   - Account holder name
+   - Account type (Savings, Current, etc.)
+
+2. **Statement Period:**
+   - Start date (convert to YYYY-MM-DD)
+   - End date (convert to YYYY-MM-DD)
+
+3. **Bank Information:**
+   - Bank name
+   - Branch name
+   - Currency code (BDT, USD, EUR, etc.)
+
+4. **Summary Balances:**
+   - Opening balance
+   - Closing balance
+   - Total debits (sum of all withdrawals)
+   - Total credits (sum of all deposits)
+
+5. **All Transactions:**
+   For EACH transaction, extract:
+   - Date (convert to YYYY-MM-DD format)
+   - Description (transaction details)
+   - Debit amount (0.00 if none)
+   - Credit amount (0.00 if none)
+   - Balance (running balance after transaction)
+
+6. **Confidence Scores:**
+   For each field, provide confidence (0.0 to 1.0) based on:
+   - Text clarity and readability
+   - Format consistency
+   - Data completeness
+
+OUTPUT FORMAT:
+Return ONLY valid JSON following this structure:
+
+{sample_json_str}
+
+JSON REQUIREMENTS:
+- Use double quotes (") for all keys and string values
+- Dates must be ISO 8601 format (YYYY-MM-DD)
+- Amounts must be numbers (not strings)
+- Include confidence for every field
+- Use 0.00 for missing debit/credit values
+- Preserve original description text
+
+CRITICAL: Return ONLY the JSON object. No explanatory text before or after.
+"""
+
+    # ============================================================================
+    # Agent 3: Data Normalization & Validation Agent
+    # ============================================================================
+
+    def create_normalization_prompt(self, extracted_data: dict) -> str:
+        """
+        Create prompt for Agent 3: Data Normalization & Validation.
+
+        This agent receives extracted JSON and normalizes/validates it.
+
+        Args:
+            extracted_data: Extracted data from Agent 2
+
+        Returns:
+            str: Prompt for normalization and validation
+        """
+        extracted_json_str = json.dumps(extracted_data, indent=2)
+
+        return f"""You are an expert data validator for bank statements. Normalize and validate the extracted data to ensure accuracy and consistency.
+
+EXTRACTED DATA:
+```json
+{extracted_json_str}
+```
+
+NORMALIZATION & VALIDATION TASKS:
+
+1. **Date Validation:**
+   - Verify all dates are valid and in YYYY-MM-DD format
+   - Check that transaction dates fall within statement period
+   - Ensure chronological ordering
+   - Flag dates that seem incorrect
+
+2. **Amount Validation:**
+   - Verify all amounts are valid numbers
+   - Check that debits/credits are not both non-zero for same transaction
+   - Validate that running balance calculations are correct
+   - Verify opening + credits - debits = closing balance
+   - Flag any mathematical inconsistencies
+
+3. **Currency Consistency:**
+   - Ensure single currency throughout
+   - Standardize to ISO 4217 code (BDT, USD, EUR, etc.)
+
+4. **Data Normalization:**
+   - Standardize date formats to ISO 8601
+   - Remove extra spaces from descriptions
+   - Normalize currency symbols to codes
+   - Clean up formatting inconsistencies
+
+5. **Balance Verification:**
+   - Recalculate running balances from opening balance
+   - Flag discrepancies between stated and calculated balances
+   - Verify total debits and credits match transaction sums
+
+6. **Confidence Adjustment:**
+   - Increase confidence for validated fields
+   - Decrease confidence for fields with inconsistencies
+   - Add validation flags for problematic fields
+
+OUTPUT FORMAT:
+Return JSON with normalized data and validation results:
+
+```json
+{{
+  "normalized_data": {{
+    "account": {{ ... }},
+    "period": {{ ... }},
+    "bank": {{ ... }},
+    "balances": {{ ... }},
+    "transactions": [ ... ]
+  }},
+  "validation_results": {{
+    "balance_verification": {{
+      "calculated_closing": 15000.00,
+      "stated_closing": 15000.00,
+      "matches": true,
+      "confidence": 0.98
+    }},
+    "date_validation": {{
+      "all_dates_valid": true,
+      "chronological": true,
+      "within_period": true,
+      "confidence": 0.95
+    }},
+    "amount_validation": {{
+      "all_amounts_valid": true,
+      "running_balance_correct": true,
+      "confidence": 0.93
+    }},
+    "issues": [],
+    "overall_confidence": 0.94
+  }}
+}}
+```
+
+CRITICAL:
+- Return ONLY valid JSON
+- Include both normalized_data and validation_results
+- Flag all issues in the "issues" array
+- Provide overall confidence score (0.0 to 1.0)
+"""
+
+    # ============================================================================
+    # Helper Methods
+    # ============================================================================
+
+    def create_pipeline_summary_prompt(
             self,
-            document_type: str,
-            include_confidence: bool = True,
-            include_bbox: bool = True
+            raw_ocr: str,
+            cleaned_text: str,
+            extracted_data: dict,
+            normalized_data: dict
     ) -> str:
         """
-        Create a VLM prompt for extracting data into canonical JSON schema.
-        
+        Create a summary prompt for reviewing the entire pipeline output.
+
         Args:
-            document_type: Type of document (bank_statement, invoice, receipt, generic)
-            include_confidence: Whether to request confidence scores per field
-            include_bbox: Whether to request bounding box coordinates
-        
+            raw_ocr: Original OCR text
+            cleaned_text: Cleaned text from Agent 1
+            extracted_data: Extracted data from Agent 2
+            normalized_data: Normalized data from Agent 3
+
         Returns:
-            str: VLM prompt for canonical extraction
+            str: Summary of the pipeline
         """
-        if document_type == 'bank_statement':
-            return self._create_bank_statement_canonical_prompt(include_confidence, include_bbox)
-        elif document_type == 'invoice':
-            return self._create_invoice_canonical_prompt(include_confidence, include_bbox)
-        elif document_type == 'receipt':
-            return self._create_receipt_canonical_prompt(include_confidence, include_bbox)
-        else:
-            return self._create_generic_canonical_prompt(include_confidence, include_bbox)
-
-    def _create_bank_statement_canonical_prompt(self, include_confidence: bool, include_bbox: bool) -> str:
-        """Create canonical extraction prompt for bank statements."""
-        confidence_instruction = """
-- For each field, provide a confidence score (0.0 to 1.0) indicating extraction certainty
-- Confidence should reflect: text clarity, format consistency, field completeness
-""" if include_confidence else ""
-
-        bbox_instruction = """
-- For each field, provide bounding box coordinates [x, y, width, height] in image pixels
-- Coordinates should indicate where the field appears on the page
-""" if include_bbox else ""
-
-        sample_json = {
-            "document_id": "<uuid>",
-            "source_filename": "statement.pdf",
-            "document_type": "bank_statement",
-            "pages": [
-                {
-                    "page_number": 1,
-                    "raw_text": "...",
-                }
-            ],
-            "extractions": {
-                "account": {
-                    "account_number": {
-                        "value": "XXXX1234",
-                        "confidence": 0.92,
-                        "page": 1,
-                        "bbox": [100, 50, 200, 20] if include_bbox else None,
-                    },
-                    "account_holder": {"value": "John Doe", "confidence": 0.87}
-                },
-                "period": {
-                    "start_date": {"value": "2025-01-01", "confidence": 0.95},
-                    "end_date": {"value": "2025-01-31", "confidence": 0.94}
-                },
-                "transactions": [
-                    {
-                        "date": {"value": "2025-01-02", "confidence": 0.98},
-                        "description": {"value": "ATM Withdrawal", "confidence": 0.93},
-                        "debit": {"value": 2500.00, "currency": "BDT", "confidence": 0.98},
-                        "credit": {"value": 0.00, "confidence": 0.98},
-                        "balance": {"value": 15000.00, "confidence": 0.90},
-                        "page": 2,
-                        "bbox": [50, 200, 500, 30] if include_bbox else None,
-                    }
-                ],
-                "summary": {
-                    "opening_balance": {"value": 17500.00, "confidence": 0.95},
-                    "closing_balance": {"value": 15000.00, "confidence": 0.95}
-                }
-            }
-        }
-
-        sample_json_str = json.dumps(sample_json, indent=2)
-
         return f"""
-You are an expert document extractor. Analyze the provided document image and extract structured data following the canonical JSON schema.
+MULTI-AGENT PROCESSING PIPELINE SUMMARY
 
-EXTRACTION TASKS
+=== STAGE 1: RAW OCR ===
+Length: {len(raw_ocr)} characters
+Preview: {raw_ocr[:200]}...
 
-1. DOCUMENT ANALYSIS
-   - Identify the document type and structure
-   - Locate key sections: header, transactions/items, summary/totals
-   - Understand the layout (tables, key-value pairs, free text)
+=== STAGE 2: CLEANED TEXT ===
+Length: {len(cleaned_text)} characters
+Preview: {cleaned_text[:200]}...
 
-2. DATA EXTRACTION
-   Extract all available information and map to canonical schema:
-   - Account information (account number, holder name)
-   - Statement period (start date, end date)
-   - All transactions with: date, description, debit, credit, balance
-   - Summary information (opening balance, closing balance)
-   - Currency detection
+=== STAGE 3: EXTRACTED DATA ===
+Transactions found: {len(extracted_data.get('transactions', []))}
+Account number: {extracted_data.get('account', {}).get('account_number', {}).get('value', 'N/A')}
+Period: {extracted_data.get('period', {}).get('start_date', {}).get('value', 'N/A')} to {extracted_data.get('period', {}).get('end_date', {}).get('value', 'N/A')}
 
-3. FIELD-LEVEL METADATA{confidence_instruction}{bbox_instruction}
+=== STAGE 4: NORMALIZED & VALIDATED ===
+Overall Confidence: {normalized_data.get('validation_results', {}).get('overall_confidence', 0.0):.2%}
+Issues Found: {len(normalized_data.get('validation_results', {}).get('issues', []))}
+Balance Verified: {normalized_data.get('validation_results', {}).get('balance_verification', {}).get('matches', False)}
 
-4. DATA NORMALIZATION
-   - Dates: Convert to ISO 8601 format (YYYY-MM-DD)
-   - Amounts: Remove commas, handle decimals, detect currency
-   - Text: Clean whitespace, preserve original formatting where needed
-
-OUTPUT FORMAT
-Return ONLY valid JSON following this exact structure:
-
-{sample_json_str}
-
-JSON REQUIREMENTS:
-- Use double quotes (") for all keys and string values
-- Use "null" for missing values
-- Numeric values should be numbers, not strings
-- Dates must be ISO 8601 format (YYYY-MM-DD)
-- Include confidence scores for each field (0.0 to 1.0)
-- Include bbox coordinates [x, y, width, height] for each field if available
-- Ensure valid JSON parseable by json.loads()
-
-CRITICAL: Return ONLY the JSON object. No explanatory text before or after.
-"""
-
-    def _create_invoice_canonical_prompt(self, include_confidence: bool, include_bbox: bool) -> str:
-        """Create canonical extraction prompt for invoices."""
-        confidence_instruction = """
-- For each field, provide a confidence score (0.0 to 1.0) indicating extraction certainty
-""" if include_confidence else ""
-
-        bbox_instruction = """
-- For each field, provide bounding box coordinates [x, y, width, height] in image pixels
-""" if include_bbox else ""
-
-        sample_json = {
-            "document_id": "<uuid>",
-            "source_filename": "invoice.pdf",
-            "document_type": "invoice",
-            "pages": [{"page_number": 1, "raw_text": "..."}],
-            "extractions": {
-                "vendor": {
-                    "vendor_name": {"value": "Acme Corp", "confidence": 0.95},
-                    "vendor_address": {"value": "123 Business St", "confidence": 0.90}
-                },
-                "invoice_details": {
-                    "invoice_number": {"value": "INV-2025-001", "confidence": 0.98},
-                    "invoice_date": {"value": "2025-01-15", "confidence": 0.95},
-                    "due_date": {"value": "2025-02-15", "confidence": 0.93}
-                },
-                "customer": {
-                    "customer_name": {"value": "John Doe", "confidence": 0.92},
-                    "customer_address": {"value": "456 Main St", "confidence": 0.88}
-                },
-                "line_items": [
-                    {
-                        "description": {"value": "Product A", "confidence": 0.95},
-                        "quantity": {"value": 10, "confidence": 0.98},
-                        "unit_price": {"value": 25.00, "currency": "USD", "confidence": 0.95},
-                        "total": {"value": 250.00, "currency": "USD", "confidence": 0.95},
-                        "page": 1,
-                        "bbox": [50, 200, 500, 30] if include_bbox else None,
-                    }
-                ],
-                "summary": {
-                    "subtotal": {"value": 250.00, "currency": "USD", "confidence": 0.95},
-                    "tax": {"value": 25.00, "currency": "USD", "confidence": 0.93},
-                    "total": {"value": 275.00, "currency": "USD", "confidence": 0.95}
-                }
-            }
-        }
-
-        sample_json_str = json.dumps(sample_json, indent=2)
-
-        return f"""
-You are an expert invoice extractor. Analyze the provided invoice image and extract structured data following the canonical JSON schema.
-
-EXTRACTION TASKS
-
-1. INVOICE ANALYSIS
-   - Identify vendor information (name, address, contact)
-   - Locate invoice details (number, date, due date)
-   - Extract customer information
-   - Identify line items table
-   - Find summary/totals section
-
-2. DATA EXTRACTION
-   Extract all available information:
-   - Vendor details (name, address)
-   - Invoice metadata (number, dates)
-   - Customer information
-   - All line items (description, quantity, unit price, total)
-   - Summary (subtotal, tax, total, currency)
-
-3. FIELD-LEVEL METADATA{confidence_instruction}{bbox_instruction}
-
-4. DATA NORMALIZATION
-   - Dates: Convert to ISO 8601 format (YYYY-MM-DD)
-   - Amounts: Remove commas, handle decimals, detect currency
-   - Numbers: Extract as numeric values
-
-OUTPUT FORMAT
-Return ONLY valid JSON following this exact structure:
-
-{sample_json_str}
-
-JSON REQUIREMENTS:
-- Use double quotes (") for all keys and string values
-- Use "null" for missing values
-- Numeric values should be numbers, not strings
-- Dates must be ISO 8601 format (YYYY-MM-DD)
-- Include confidence scores for each field (0.0 to 1.0)
-- Include bbox coordinates [x, y, width, height] for each field if available
-
-CRITICAL: Return ONLY the JSON object. No explanatory text before or after.
-"""
-
-    def _create_receipt_canonical_prompt(self, include_confidence: bool, include_bbox: bool) -> str:
-        """Create canonical extraction prompt for receipts."""
-        confidence_instruction = """
-- For each field, provide a confidence score (0.0 to 1.0) indicating extraction certainty
-""" if include_confidence else ""
-
-        bbox_instruction = """
-- For each field, provide bounding box coordinates [x, y, width, height] in image pixels
-""" if include_bbox else ""
-
-        sample_json = {
-            "document_id": "<uuid>",
-            "source_filename": "receipt.pdf",
-            "document_type": "receipt",
-            "pages": [{"page_number": 1, "raw_text": "..."}],
-            "extractions": {
-                "merchant": {
-                    "merchant_name": {"value": "Store ABC", "confidence": 0.95},
-                    "merchant_address": {"value": "789 Shop St", "confidence": 0.88}
-                },
-                "receipt_details": {
-                    "receipt_number": {"value": "RCP-12345", "confidence": 0.92},
-                    "date": {"value": "2025-01-20", "confidence": 0.95},
-                    "time": {"value": "14:30:00", "confidence": 0.90}
-                },
-                "items": [
-                    {
-                        "description": {"value": "Item 1", "confidence": 0.95},
-                        "quantity": {"value": 2, "confidence": 0.90},
-                        "price": {"value": 15.99, "currency": "USD", "confidence": 0.95},
-                        "page": 1,
-                        "bbox": [50, 150, 300, 25] if include_bbox else None,
-                    }
-                ],
-                "payment": {
-                    "payment_method": {"value": "Credit Card", "confidence": 0.93},
-                    "total": {"value": 31.98, "currency": "USD", "confidence": 0.95},
-                    "tax": {"value": 2.56, "currency": "USD", "confidence": 0.90}
-                }
-            }
-        }
-
-        sample_json_str = json.dumps(sample_json, indent=2)
-
-        return f"""
-You are an expert receipt extractor. Analyze the provided receipt image and extract structured data following the canonical JSON schema.
-
-EXTRACTION TASKS
-
-1. RECEIPT ANALYSIS
-   - Identify merchant information (name, address)
-   - Locate receipt details (number, date, time)
-   - Extract purchased items list
-   - Find payment information (method, total, tax)
-
-2. DATA EXTRACTION
-   Extract all available information:
-   - Merchant details
-   - Receipt metadata (number, date, time)
-   - All purchased items (description, quantity, price)
-   - Payment information (method, totals, tax, currency)
-
-3. FIELD-LEVEL METADATA{confidence_instruction}{bbox_instruction}
-
-4. DATA NORMALIZATION
-   - Dates: Convert to ISO 8601 format (YYYY-MM-DD)
-   - Times: Convert to 24-hour format (HH:MM:SS)
-   - Amounts: Remove commas, handle decimals, detect currency
-   - Numbers: Extract as numeric values
-
-OUTPUT FORMAT
-Return ONLY valid JSON following this exact structure:
-
-{sample_json_str}
-
-JSON REQUIREMENTS:
-- Use double quotes (") for all keys and string values
-- Use "null" for missing values
-- Numeric values should be numbers, not strings
-- Dates must be ISO 8601 format (YYYY-MM-DD)
-- Include confidence scores for each field (0.0 to 1.0)
-- Include bbox coordinates [x, y, width, height] for each field if available
-
-CRITICAL: Return ONLY the JSON object. No explanatory text before or after.
-"""
-
-    def _create_generic_canonical_prompt(self, include_confidence: bool, include_bbox: bool) -> str:
-        """Create canonical extraction prompt for generic documents."""
-        confidence_instruction = """
-- For each field, provide a confidence score (0.0 to 1.0) indicating extraction certainty
-""" if include_confidence else ""
-
-        bbox_instruction = """
-- For each field, provide bounding box coordinates [x, y, width, height] in image pixels
-""" if include_bbox else ""
-
-        sample_json = {
-            "document_id": "<uuid>",
-            "source_filename": "document.pdf",
-            "document_type": "generic",
-            "pages": [{"page_number": 1, "raw_text": "..."}],
-            "extractions": {
-                "header": {
-                    "title": {"value": "Document Title", "confidence": 0.90},
-                    "date": {"value": "2025-01-20", "confidence": 0.85}
-                },
-                "key_value_pairs": [
-                    {
-                        "key": {"value": "Field Name", "confidence": 0.92},
-                        "value": {"value": "Field Value", "confidence": 0.88},
-                        "page": 1,
-                        "bbox": [100, 200, 300, 20] if include_bbox else None,
-                    }
-                ],
-                "tables": [
-                    {
-                        "table_data": [
-                            {"row": 1, "columns": ["Header1", "Header2"], "confidence": 0.90}
-                        ],
-                        "page": 1,
-                        "bbox": [50, 300, 500, 200] if include_bbox else None,
-                    }
-                ],
-                "text_blocks": [
-                    {
-                        "text": {"value": "Paragraph text...", "confidence": 0.85},
-                        "page": 1,
-                        "bbox": [50, 500, 500, 100] if include_bbox else None,
-                    }
-                ]
-            }
-        }
-
-        sample_json_str = json.dumps(sample_json, indent=2)
-
-        return f"""
-You are an expert document extractor. Analyze the provided document image and extract structured data following the canonical JSON schema.
-
-EXTRACTION TASKS
-
-1. DOCUMENT ANALYSIS
-   - Identify document structure (headers, paragraphs, tables, key-value pairs)
-   - Locate important information sections
-   - Understand the layout and organization
-
-2. DATA EXTRACTION
-   Extract all available information:
-   - Header information (title, dates, identifiers)
-   - Key-value pairs (labels and their values)
-   - Tables (if present) with row and column data
-   - Text blocks (paragraphs, notes, descriptions)
-
-3. FIELD-LEVEL METADATA{confidence_instruction}{bbox_instruction}
-
-4. DATA NORMALIZATION
-   - Dates: Convert to ISO 8601 format (YYYY-MM-DD) if detected
-   - Numbers: Extract as numeric values where appropriate
-   - Text: Preserve original formatting, clean whitespace
-
-OUTPUT FORMAT
-Return ONLY valid JSON following this exact structure:
-
-{sample_json_str}
-
-JSON REQUIREMENTS:
-- Use double quotes (") for all keys and string values
-- Use "null" for missing values
-- Numeric values should be numbers, not strings
-- Dates must be ISO 8601 format (YYYY-MM-DD) if present
-- Include confidence scores for each field (0.0 to 1.0)
-- Include bbox coordinates [x, y, width, height] for each field if available
-
-CRITICAL: Return ONLY the JSON object. No explanatory text before or after.
+PIPELINE COMPLETE
 """
