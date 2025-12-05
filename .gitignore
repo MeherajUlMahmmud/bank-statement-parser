@@ -31,3 +31,32 @@ Thumbs.db
 *.pyc
 __pycache__/
 
+# Python
+venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Backend specific
+backend/logs/
+backend/uploads/
+backend/database.db
+backend/*.db
+
+# Server specific
+server/logs/
+server/uploads/
+server/database.db
+server/*.db
+
+# Alembic
+backend/alembic/versions/*.pyc
+
+# Test coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
