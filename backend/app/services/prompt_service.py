@@ -86,6 +86,7 @@ CRITICAL: Preserve all financial data (dates, amounts, descriptions) exactly - j
         Create prompt for Agent 2: Structured Data Extraction.
 
         This agent receives cleaned OCR text and extracts structured JSON data.
+        FLEXIBLE SCHEMA: Detects and preserves actual column structure from the statement.
 
         Args:
             cleaned_text: Cleaned text from Agent 1
@@ -114,6 +115,16 @@ CRITICAL: Preserve all financial data (dates, amounts, descriptions) exactly - j
                 "total_debits": {"value": 5500.00, "confidence": 0.92},
                 "total_credits": {"value": 3000.00, "confidence": 0.91}
             },
+            "schema_info": {
+                "detected_columns": ["date", "description", "debit", "credit", "balance"],
+                "column_mapping": {
+                    "date": "Date",
+                    "description": "Description/Particulars",
+                    "debit": "Withdrawal/Debit",
+                    "credit": "Deposit/Credit",
+                    "balance": "Balance"
+                }
+            },
             "transactions": [
                 {
                     "date": {"value": "2025-01-02", "confidence": 0.98},
@@ -121,13 +132,6 @@ CRITICAL: Preserve all financial data (dates, amounts, descriptions) exactly - j
                     "debit": {"value": 2500.00, "confidence": 0.98},
                     "credit": {"value": 0.00, "confidence": 0.98},
                     "balance": {"value": 15000.00, "confidence": 0.90}
-                },
-                {
-                    "date": {"value": "2025-01-05", "confidence": 0.97},
-                    "description": {"value": "Salary Credit", "confidence": 0.95},
-                    "debit": {"value": 0.00, "confidence": 0.98},
-                    "credit": {"value": 50000.00, "confidence": 0.97},
-                    "balance": {"value": 65000.00, "confidence": 0.92}
                 }
             ]
         }
@@ -163,22 +167,37 @@ EXTRACTION TASKS:
    - Total debits (sum of all withdrawals)
    - Total credits (sum of all deposits)
 
-5. **All Transactions:**
-   For EACH transaction, extract:
-   - Date (convert to YYYY-MM-DD format)
-   - Description (transaction details)
-   - Debit amount (0.00 if none)
-   - Credit amount (0.00 if none)
-   - Balance (running balance after transaction)
+5. **Detect Transaction Table Schema (IMPORTANT):**
+   First, identify the ACTUAL column headers in the transaction table:
+   - Look for headers like: Date, Description, Particulars, Narration, Debit, Credit, Withdrawal, Deposit, Amount, Balance, Running Balance, etc.
+   - Different banks use different column names - preserve the ORIGINAL structure
+   - Some statements have: Date | Description | Debit | Credit | Balance
+   - Others have: Date | Particulars | Withdrawal | Deposit | Running Balance
+   - Others have: Date | Narration | Amount | Dr/Cr | Balance
+   - Some have additional columns: Reference Number, Cheque Number, Value Date, etc.
 
-6. **Confidence Scores:**
+6. **Extract Schema Information:**
+   In "schema_info", record:
+   - "detected_columns": List of column keys you'll use (normalized: date, description, debit, credit, balance, etc.)
+   - "column_mapping": Map of your keys to the ORIGINAL column names found in the statement
+   - "additional_columns": Any extra columns beyond the standard ones
+
+7. **Extract All Transactions with FLEXIBLE schema:**
+   For EACH transaction row, extract ALL available columns:
+   - ALWAYS include: date, description (or whatever the bank calls it)
+   - Include debit/credit/withdrawal/deposit (whatever columns exist)
+   - Include balance if available
+   - Include any additional columns (reference_number, cheque_number, value_date, etc.)
+   - Store original column values even if they don't fit standard schema
+
+8. **Confidence Scores:**
    For each field, provide confidence (0.0 to 1.0) based on:
    - Text clarity and readability
    - Format consistency
    - Data completeness
 
 OUTPUT FORMAT:
-Return ONLY valid JSON following this structure:
+Return ONLY valid JSON following this structure (adapt to actual columns found):
 
 {sample_json_str}
 
@@ -187,8 +206,16 @@ JSON REQUIREMENTS:
 - Dates must be ISO 8601 format (YYYY-MM-DD)
 - Amounts must be numbers (not strings)
 - Include confidence for every field
-- Use 0.00 for missing debit/credit values
-- Preserve original description text
+- Include "schema_info" with detected columns and mapping
+- In transactions, include ALL columns found (not just standard ones)
+- Use 0.00 for missing numeric values
+- Preserve original text exactly in descriptions
+
+CRITICAL FLEXIBILITY:
+- DO NOT force data into a rigid schema
+- PRESERVE whatever columns the bank statement actually has
+- Map column names to indicate what they represent
+- Include ALL data, even unexpected columns
 
 CRITICAL: Return ONLY the JSON object. No explanatory text before or after.
 """

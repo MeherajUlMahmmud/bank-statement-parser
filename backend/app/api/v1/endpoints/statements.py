@@ -61,7 +61,11 @@ async def process_statement_background(statement_id: str, file_path: str):
                 statement.total_transactions = result['metadata']['transactions_found']
                 statement.overall_confidence = result['metadata']['overall_confidence']
                 statement.processing_time_seconds = result['metadata']['total_duration']
-                
+
+                # Save schema information (flexible column structure)
+                if 'schema_info' in final_data:
+                    statement.schema_info = final_data['schema_info']
+
                 # Save customer details
                 if 'account' in final_data:
                     customer = CustomerDetails(

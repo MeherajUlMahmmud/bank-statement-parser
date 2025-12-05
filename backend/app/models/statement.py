@@ -43,6 +43,9 @@ class BankStatement(Base):
     page_count = Column(Integer, default=0)
     total_transactions = Column(Integer, default=0)
 
+    # Schema information for flexible column structure
+    schema_info = Column(JSON, nullable=True)  # Stores detected columns and mapping
+
     # AI/Processing metadata
     model_used = Column(String(100), nullable=True)
     prompt_tokens = Column(Integer, default=0)
