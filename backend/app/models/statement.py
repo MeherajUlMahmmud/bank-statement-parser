@@ -2,10 +2,11 @@ import uuid
 from datetime import datetime
 from typing import Optional
 from sqlalchemy import Column, String, Integer, Float, DateTime, Text, ForeignKey, JSON, Enum as SQLEnum
-from sqlalchemy.orm import relationship, declarative_base
+from sqlalchemy.orm import relationship
 import enum
 
-Base = declarative_base()
+# Import Base from database module to ensure single declarative_base instance
+from ..core.database import Base
 
 
 class ProcessingStatus(str, enum.Enum):

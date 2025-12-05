@@ -1,41 +1,72 @@
-from app.api.v1.api import api_router
 from fastapi import FastAPI
-from app.core.config import settings
+from fastapi.middleware.cors import CORSMiddleware
 import logging
-from logging.config import dictConfig
 
-from app.core.logging import LOGGING_CONFIG
+from app.core.config import settings
+from app.core.database import init_db, close_db
+from app.api.v1.api import api_router
 
-# 1. Apply the logging configuration BEFORE importing FastAPI
-# This ensures all loggers are configured correctly from the start.
-dictConfig(LOGGING_CONFIG)
-
-# Get a logger instance for this module
 logger = logging.getLogger(__name__)
 
 
 app = FastAPI(
-    title="GroqCloud Proxy API",
-    description="A structured FastAPI application to proxy requests to the GroqCloud Llama models.",
-    version="1.0.0",
+    title=settings.APP_NAME,
+    description="Multi-agent OCR pipeline for bank statement processing with OlmOCR and Groq",
+    version=settings.VERSION,
+    debug=settings.DEBUG,
 )
 
-# 2. Add a startup event to confirm logging is working
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins_list,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.on_event("startup")
 async def startup_event():
-    logger.info("Application starting up...")
+    """Initialize database and services on startup."""
+    logger.info(f"Starting {settings.APP_NAME} v{settings.VERSION}")
     logger.info(f"Environment: {settings.ENVIRONMENT}")
     logger.info(f"Debug mode: {settings.DEBUG}")
 
-# Include the main API router
-app.include_router(api_router, prefix="/api/v1")
+    # Initialize database
+    await init_db()
+    logger.info("Database initialized")
 
-# 3. Add a simple root endpoint that uses the logger
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Clean up resources on shutdown."""
+    logger.info("Shutting down application")
+    await close_db()
+    logger.info("Database connections closed")
+
+
+# Include API router
+app.include_router(api_router, prefix="/api/v1")
 
 
 @app.get("/")
-async def read_root():
-    logger.info("Root endpoint was accessed.")
-    return {"message": "Welcome to the Awesome API! Check the console and logs/ directory."}
+async def root():
+    """Root endpoint with API information."""
+    return {
+        "name": settings.APP_NAME,
+        "version": settings.VERSION,
+        "description": "Multi-agent OCR pipeline for bank statement processing",
+        "docs": "/docs",
+        "health": "/health"
+    }
+
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint."""
+    return {
+        "status": "healthy",
+        "environment": settings.ENVIRONMENT,
+        "version": settings.VERSION
+    }

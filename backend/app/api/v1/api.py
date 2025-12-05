@@ -1,7 +1,8 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import groq
+
+from .endpoints import statements, export
 
 api_router = APIRouter()
 
-# Include the groq router with a prefix
-api_router.include_router(groq.router, prefix="/groq", tags=["Groq"])
+api_router.include_router(statements.router, prefix="/statements", tags=["statements"])
+api_router.include_router(export.router, prefix="/statements", tags=["export"])

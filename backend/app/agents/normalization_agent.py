@@ -1,5 +1,6 @@
 import logging
 import json
+import copy
 from typing import Dict, Any
 
 from ..services.groq_service import GroqService
@@ -99,25 +100,43 @@ class NormalizationAgent:
             }
 
     def _parse_json_response(self, response_text: str) -> Dict[str, Any]:
-        """Parse JSON from LLM response."""
+        """Parse JSON from LLM response using robust brace matching."""
+        # Find the first opening brace
         json_start = response_text.find('{')
-        json_end = response_text.rfind('}') + 1
-
-        if json_start < 0 or json_end <= json_start:
-            logger.warning("No JSON found in response")
+        if json_start < 0:
+            logger.warning("No opening brace found in response")
             return {}
 
+        # Find matching closing brace by counting braces
+        brace_count = 0
+        json_end = -1
+        for i in range(json_start, len(response_text)):
+            if response_text[i] == '{':
+                brace_count += 1
+            elif response_text[i] == '}':
+                brace_count -= 1
+                if brace_count == 0:
+                    json_end = i + 1
+                    break
+
+        if json_end <= json_start:
+            logger.warning("No matching closing brace found in response")
+            return {}
+
+        # Extract and parse JSON
+        json_str = response_text[json_start:json_end]
         try:
-            data = json.loads(response_text[json_start:json_end])
+            data = json.loads(json_str)
             return data
         except json.JSONDecodeError as e:
             logger.error(f"JSON parsing error: {str(e)}")
+            logger.debug(f"Attempted to parse: {json_str[:200]}...")
             return {}
 
     def _apply_normalization(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Apply additional normalization using our normalization service."""
-        # Use normalization service to ensure consistent formatting
-        normalized = data.copy()
+        # Use deep copy to avoid mutating the original data structure
+        normalized = copy.deepcopy(data)
 
         # Normalize transactions
         if 'transactions' in normalized:

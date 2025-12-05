@@ -49,11 +49,12 @@ async def init_db() -> None:
     Initialize database tables.
     Called on application startup.
     """
-    from app.models.statement import Base as ModelsBase
+    # Import models to ensure they're registered with Base
+    from app.models.statement import BankStatement, Transaction, CustomerDetails, BankDetails, ProcessingLog
 
     async with engine.begin() as conn:
-        # Create all tables
-        await conn.run_sync(ModelsBase.metadata.create_all)
+        # Create all tables using the shared Base
+        await conn.run_sync(Base.metadata.create_all)
 
 
 async def close_db() -> None:

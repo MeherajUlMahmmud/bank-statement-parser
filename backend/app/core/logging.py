@@ -37,7 +37,7 @@ LOGGING_CONFIG = {
             "class": "logging.handlers.RotatingFileHandler",
             "level": "INFO",
             "formatter": "detailed",
-            "filename": LOG_DIR / "app.log",
+            "filename": str(LOG_DIR / "app.log"),
             "maxBytes": 5 * 1024 * 1024,  # 5 MB
             "backupCount": 5,             # Keep 5 backup files
             "encoding": "utf8",
@@ -47,7 +47,7 @@ LOGGING_CONFIG = {
             "class": "logging.handlers.RotatingFileHandler",
             "level": "ERROR",
             "formatter": "detailed",
-            "filename": LOG_DIR / "error.log",
+            "filename": str(LOG_DIR / "error.log"),
             "maxBytes": 5 * 1024 * 1024,  # 5 MB
             "backupCount": 5,             # Keep 5 backup files
             "encoding": "utf8",
@@ -89,24 +89,3 @@ LOGGING_CONFIG = {
         },
     }
 }
-
-# Optional: Add color to the console formatter if colorlog is installed
-# if settings.DEBUG:
-#     try:
-#         import colorlog
-#         LOGGING_CONFIG["formatters"]["color"] = {
-#             "()": "colorlog.ColoredFormatter",
-#             "format": "%(log_color)s%(levelname)-8s%(reset)s %(blue)s%(name)s%(reset)s %(message)s",
-#             "log_colors": {
-#                 'DEBUG': 'cyan',
-#                 'INFO': 'green',
-#                 'WARNING': 'yellow',
-#                 'ERROR': 'red',
-#                 'CRITICAL': 'red,bg_white',
-#             }
-#         }
-#         # Update the console handler to use the colored formatter
-#         LOGGING_CONFIG["handlers"]["console"]["formatter"] = "color"
-#     except ImportError:
-#         # If colorlog is not installed, it will silently fall back to the simple formatter
-#         pass
