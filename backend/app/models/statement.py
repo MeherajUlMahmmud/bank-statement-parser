@@ -216,8 +216,9 @@ class ProcessingLog(Base):
     # Timing
     duration_seconds = Column(Float, nullable=True)
 
-    # Metadata
-    metadata = Column(JSON, nullable=True)  # Additional context (tokens, model, errors, etc.)
+    # Additional context (tokens, model, errors, etc.)
+    # Note: Using 'extra_metadata' instead of 'metadata' to avoid SQLAlchemy reserved name conflict
+    extra_metadata = Column(JSON, nullable=True)
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
